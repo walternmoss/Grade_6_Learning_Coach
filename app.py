@@ -5,12 +5,12 @@ A single-screen, low-friction Streamlit app built with the `google-genai` SDK.
 
 How It Works:
 - One simple chat window supporting both Voice (`st.audio_input`) and Text (`st.chat_input`).
-- Sidebar file drop for Lesson PDFs, Word worksheets (.docx), text (.txt), and screenshots (.png/.jpg).
-- Coach automatically intuits what the student needs on each turn:
-  1. Socratic step-by-step guidance (pointing to where clues live in the uploaded files).
-  2. Automatic Voice/Thought-to-Draft (renders a copyable 2-3 sentence box in his own words).
-  3. Automatic "Good Enough" (85%+) completion banner to prevent over-editing and parent-child friction.
-  4. Friendly clarification if a question prompt, worksheet, or rubric is missing.
+- Sidebar file drop for optional lesson materials (PDFs, Word worksheets, text, images).
+- Coach automatically intuits what the student needs:
+  1. Open-ended general knowledge answers (no document required!).
+  2. Socratic guidance when working on specific school lessons.
+  3. Automatic Voice/Thought-to-Draft (renders a copyable 2-3 sentence box in his own words).
+  4. Automatic "Good Enough" (85%+) completion banner to prevent over-editing.
 """
 
 import hashlib
@@ -79,8 +79,8 @@ st.markdown(
 class CoachTurn(BaseModel):
     """
     Single structured response returned by Gemini on every turn.
-    Allows Coach to seamlessly chat, draft sentences, or award the
-    'Good Enough' green light without making the student switch modes.
+    Allows Coach to seamlessly chat, answer general questions, draft sentences,
+    or award the 'Good Enough' green light.
     """
 
     what_i_heard: Optional[str] = Field(
@@ -92,72 +92,61 @@ class CoachTurn(BaseModel):
     )
     coach_reply: str = Field(
         description=(
-            "Your conversational reply to the student. Keep it warm, encouraging, and short "
-            "(under 85 words). End with at most ONE clear question."
+            "Your conversational reply to the student. Keep it warm, encouraging, and clear "
+            "(under 120 words). IF HE ASKS A GENERAL KNOWLEDGE QUESTION (like history, science, "
+            "the Talmud, religion, etc.), answer it directly and engagingly for an 11-year-old. "
+            "NEVER ask for a document upload or school lesson when he asks a general knowledge question."
         )
     )
     ready_to_copy_draft: Optional[str] = Field(
         default=None,
         description=(
             "Populate ONLY when the student explains an answer (by voice or rough text) or asks "
-            "for help wording his thoughts. Turn his exact ideas into 2 to 3 clear, complete "
+            "for help wording his thoughts for an assignment. Turn his exact ideas into 2 to 3 clear, complete "
             "6th-grade sentences preserving his natural 11/12-year-old vocabulary. "
-            "Leave null/None if you are still asking Socratic questions or clarifying the prompt."
+            "Leave null/None if this is a general chat or question-answering turn."
         ),
     )
     is_good_enough_to_submit: bool = Field(
         default=False,
         description=(
-            "Set to True ONLY when the student's draft (or the `ready_to_copy_draft` shaped from "
-            "his spoken explanation) meets 85% or more of the assignment/question requirements "
-            "at a realistic 6th-grade level."
+            "Set to True ONLY when the student's draft meets 85% or more of an assignment's requirements."
         ),
     )
     note_for_learning_coach: Optional[str] = Field(
         default=None,
         description=(
             "Populate ONLY when evaluating a draft or setting `is_good_enough_to_submit=True`. "
-            "A brief, reassuring 1-2 sentence note for his Mom (Learning Coach) explaining why "
-            "this meets 6th-grade standards and why no further rewrites are needed."
+            "A brief, reassuring 1-2 sentence note for his Mom (Learning Coach)."
         ),
     )
 
 
 # =====================================================================
-# 3. UNIFIED SYSTEM INSTRUCTION
+# 3. UNIFIED SYSTEM INSTRUCTION (STRICTLY OPEN-ENDED FOR GENERAL Q&A)
 # =====================================================================
 UNIFIED_COACH_SYSTEM_PROMPT = """
 You are "Coach", a warm, calm, slightly witty AI study partner for an almost 12-year-old
 6th-grade boy attending Connections Academy online homeschool.
 
-You operate in ONE unified conversation. Intuit what he needs based on what he sends you:
+CORE RULES:
+1. ABSOLUTELY OPEN-ENDED FOR GENERAL QUESTIONS:
+   - If George asks about history, science, religion, the Talmud, ancient cultures, video games, 
+     or anything else out of curiosity, ANSWER IT DIRECTLY AND AWESOMELY. 
+   - DO NOT ask if he has his lesson open. DO NOT ask for a worksheet or document upload. 
+     Just be an awesome, knowledgeable tutor explaining things clearly at an 11-year-old level.
 
-1. IF HE IS STUCK OR STARTING A LESSON / WORKSHEET:
-   - Never dump a wall of text or hand him the raw answer unprompted.
-   - Point his eyes to the exact spot in his uploaded lesson/screenshot (e.g., "Look at paragraph 2
-     under the 'Water Cycle' heading..." or "Check out the middle row of the table...").
-   - Ask ONLY ONE simple, low-stress question at a time.
+2. IF HE IS WORKING ON A SCHOOL WORKSHEET / LESSON:
+   - Only if files are uploaded or he specifically mentions homework/assignments, point his eyes 
+     to the clue and keep guidance bite-sized and Socratic.
 
-2. IF HE TALKS INTO THE MIC (OR TYPES ROUGH IDEAS) TO ANSWER A QUESTION:
-   - He thinks much faster than he types! Listen to his rambling spoken explanation or rough notes.
-   - Populate `what_i_heard` so he sees you understood his voice clip.
-   - Transform his thoughts into `ready_to_copy_draft`: 2 to 3 complete, grammatically sound 6th-grade
-     sentences that he can copy-paste straight into Connections Academy.
-   - CRITICAL: Keep his authentic 11/12-year-old voice and vocabulary. Never make him sound like a
-     textbook or an adult.
+3. IF HE TALKS INTO THE MIC TO ANSWER A SCHOOL QUESTION:
+   - Listen to his rambling thoughts, populate `what_i_heard`, and shape his ideas into `ready_to_copy_draft` 
+     (2-3 clear 6th-grade sentences in his own words) with a one-click copy helper.
 
-3. IF HE SHARES A DRAFT OR ASKS "IS THIS GOOD ENOUGH?" (OR IF HIS SPOKEN ANSWER NAILS THE QUESTION):
-   - Act as an objective buffer between him and a well-meaning parent (Learning Coach) who sometimes
-     over-corrects or pushes for perfection.
-   - Grade against realistic 6th-grade expectations. If his answer covers ~85%+ of what the question
-     or rubric asks for, set `is_good_enough_to_submit = True` and include a reassuring
-     `note_for_learning_coach` telling his Mom why it's ready to submit as-is.
-   - If it's below 85%, DO NOT pile on critiques—point out the ONE simplest thing to add or tweak.
-
-4. IF YOU ARE CONFUSED OR MISSING CONTEXT:
-   - If he gives an answer or asks "Is this good?" but you don't have the worksheet question or rubric
-     yet, warmly validate his effort and ask him to paste the question/rubric, upload the file in the
-     sidebar, or read the question out loud into the mic.
+4. IF HE SHARES AN ASSIGNMENT DRAFT ("Is this good?"):
+   - Grade against realistic 6th-grade expectations. If it hits ~85%+, set `is_good_enough_to_submit = True` 
+     and give Mom the reassuring `note_for_learning_coach`.
 """
 
 
@@ -169,17 +158,14 @@ def init_session_state() -> None:
     defaults = {
         "api_key": "",
         "selected_model": "gemini-2.5-flash",
-        # Uploaded files stored once per session: {filename: {"type_label": str, "part": types.Part}}
         "lesson_materials": {},
-        # Tracks the MD5 hash of the last processed voice recording so we don't unmount the widget
         "last_audio_hash": None,
-        # Unified chat history
         "messages": [
             {
                 "role": "model",
                 "coach_reply": (
-                    "Hey George! 🦉 Drop your lesson PDF, Word worksheet, or screenshot in the "
-                    "sidebar—or just tap the microphone below and tell me what we're working on!"
+                    "Hey George! 🦉 Ask me anything—whether it's about history, science, the Talmud, "
+                    "or a school worksheet. You can type or tap the microphone below!"
                 ),
                 "what_i_heard": None,
                 "ready_to_copy_draft": None,
@@ -300,7 +286,7 @@ def build_lesson_parts() -> List[types.Part]:
     parts: List[types.Part] = []
     for meta in st.session_state.lesson_materials.values():
         parts.append(
-            types.Part.from_text(text=f"Uploaded Material: {meta['name']} ({meta['type_label']})")
+            types.Part.from_text(text=f"Optional Uploaded Material: {meta['name']} ({meta['type_label']})")
         )
         parts.append(meta["part"])
     return parts
@@ -349,16 +335,16 @@ def render_copy_button(text_to_copy: str, unique_id: str) -> None:
 
 
 # =====================================================================
-# 8. STREAMLINED SIDEBAR (FILES + RESET ONLY)
+# 8. STREAMLINED SIDEBAR (OPTIONAL FILES ONLY)
 # =====================================================================
 def render_sidebar() -> None:
-    """Render a distraction-free sidebar focused solely on uploading lesson files."""
+    """Render sidebar for optional file uploads and settings."""
     with st.sidebar:
         st.title("🦉 Learning Coach")
-        st.caption("Upload your lesson or worksheet here, then chat or talk on the right!")
+        st.caption("Chat freely, or drop a worksheet here if you want help with homework!")
 
         uploaded_files = st.file_uploader(
-            "📎 Add Lesson PDF, Worksheet (.docx), or Screenshot",
+            "📎 (Optional) Add Lesson PDF or Worksheet",
             type=["pdf", "docx", "txt", "png", "jpg", "jpeg"],
             accept_multiple_files=True,
         )
@@ -374,11 +360,11 @@ def render_sidebar() -> None:
                         st.error(f"Could not load {up_file.name}: {exc}")
 
         if st.session_state.lesson_materials:
-            st.success(f"📚 {len(st.session_state.lesson_materials)} file(s) loaded:")
+            st.success(f"📚 {len(st.session_state.lesson_materials)} file(s) attached:")
             for fname, meta in st.session_state.lesson_materials.items():
                 st.markdown(f"- **{fname}** *({meta['type_label']})*")
 
-            if st.button("🗑️ Clear Uploaded Files", use_container_width=True):
+            if st.button("🗑️ Clear Attached Files", use_container_width=True):
                 st.session_state.lesson_materials = {}
                 st.rerun()
 
@@ -389,7 +375,6 @@ def render_sidebar() -> None:
             st.session_state.last_audio_hash = None
             st.rerun()
 
-        # API Key fallback & Model selector tucked neatly at the bottom
         active_key = resolve_api_key()
         if not active_key:
             st.warning("🔑 Enter your Gemini API Key below to begin:")
@@ -409,19 +394,16 @@ def render_sidebar() -> None:
 # =====================================================================
 # 9. UNIFIED GEMINI CALL
 # =====================================================================
-def ask_coach_george(
+def ask_coach(
     client: genai.Client,
     user_text: Optional[str] = None,
     audio_bytes: Optional[bytes] = None,
     audio_mime_type: str = "audio/wav",
 ) -> CoachTurn:
-    """
-    Send active lesson files, conversation history, and the current voice/text input
-    to Gemini, returning a structured `CoachTurn`.
-    """
+    """Send history, optional files, and user input to Gemini, returning a `CoachTurn`."""
     contents: List[types.Content] = []
 
-    # 1. Include uploaded lesson materials at the start of context
+    # 1. Include optional uploaded lesson materials if present
     lesson_parts = build_lesson_parts()
     if lesson_parts:
         contents.append(
@@ -429,7 +411,7 @@ def ask_coach_george(
                 role="user",
                 parts=[
                     types.Part.from_text(
-                        text="Here are the lesson files, worksheets, or screenshots currently loaded:"
+                        text="Optional reference files attached by the student:"
                     ),
                     *lesson_parts,
                 ],
@@ -440,13 +422,13 @@ def ask_coach_george(
                 role="model",
                 parts=[
                     types.Part.from_text(
-                        text="I have read the uploaded lesson materials and am ready to help."
+                        text="Understood. I have these files available if needed for homework."
                     )
                 ],
             )
         )
 
-    # 2. Replay prior conversation history (excluding the newly appended user message)
+    # 2. Replay prior conversation history
     for msg in st.session_state.messages[:-1]:
         role = "user" if msg["role"] == "user" else "model"
         summary_text = msg.get("coach_reply", "")
@@ -459,7 +441,7 @@ def ask_coach_george(
             )
         )
 
-    # 3. Append the current turn (Voice audio, typed text, or both)
+    # 3. Append current turn
     current_parts: List[types.Part] = []
     if audio_bytes:
         current_parts.append(
@@ -468,10 +450,8 @@ def ask_coach_george(
         current_parts.append(
             types.Part.from_text(
                 text=(
-                    "The student just recorded this voice message. Listen to what he is asking or "
-                    "explaining. If he is answering a question out loud, shape his thoughts into "
-                    "`ready_to_copy_draft` (2-3 6th-grade sentences in his own words) and evaluate "
-                    "whether it meets the 85% `is_good_enough_to_submit` benchmark."
+                    "The student just recorded this voice message. Answer his question directly and warmly. "
+                    "If he is talking out an assignment answer, format it into `ready_to_copy_draft`."
                 )
             )
         )
@@ -510,24 +490,19 @@ def main() -> None:
     st.markdown("## 🦉 Coach")
     if st.session_state.lesson_materials:
         names = ", ".join(st.session_state.lesson_materials.keys())
-        st.caption(f"🟢 **Reading along with:** `{names}`")
+        st.caption(f"🟢 **Optional reference files attached:** `{names}`")
     else:
-        st.caption(
-            "Talk into the mic, type a question, or upload your worksheet in the left sidebar!"
-        )
+        st.caption("Ask any question or talk freely—no document upload required!")
 
     # Render Unified Chat Stream
     for idx, msg in enumerate(st.session_state.messages):
         avatar = "🦉" if msg["role"] == "model" else "🧑‍💻"
         with st.chat_message(msg["role"], avatar=avatar):
-            # If this is a model reply to a voice recording, show what Coach heard
             if msg.get("what_i_heard"):
                 st.caption(f"👂 *What I heard you say:* \"{msg['what_i_heard']}\"")
 
-            # Main conversational text
             st.markdown(msg["coach_reply"])
 
-            # If Coach shaped his thoughts into a 2-3 sentence draft, show an editable + copyable card
             if msg.get("ready_to_copy_draft"):
                 st.markdown("##### ✍️ Your 6th-Grade Sentences (Ready to Copy):")
                 updated_draft = st.text_area(
@@ -539,7 +514,6 @@ def main() -> None:
                 msg["ready_to_copy_draft"] = updated_draft
                 render_copy_button(updated_draft, unique_id=f"turn_{idx}")
 
-            # If the answer hits the 85%+ benchmark, show the celebratory "Good Enough" banner
             if msg.get("is_good_enough_to_submit"):
                 st.markdown(
                     """
@@ -550,7 +524,6 @@ def main() -> None:
                     unsafe_allow_html=True,
                 )
 
-            # Optional reassuring note for Mom / Learning Coach
             if msg.get("note_for_learning_coach"):
                 st.markdown(
                     f"""
@@ -564,17 +537,15 @@ def main() -> None:
     st.divider()
 
     # --- Unified Bottom Input Bar (Voice + Text) ---
-    # Static key prevents Streamlit Cloud from unmounting the recorder mid-upload
     voice_recording = st.audio_input(
-        "🎙️ Tap the microphone to talk out loud (ask a question or speak your answer):",
+        "🎙️ Tap the microphone to talk out loud (ask any question or speak your answer):",
         key="coach_voice_recorder",
     )
 
     typed_input = st.chat_input(
-        "Or type/paste here (a question number, your rough draft, or a rubric)..."
+        "Or type/paste here (ask about the Talmud, history, science, or homework)..."
     )
 
-    # Check if a brand-new audio clip was recorded
     new_audio_bytes: Optional[bytes] = None
     audio_mime = "audio/wav"
     if voice_recording is not None:
@@ -585,19 +556,13 @@ def main() -> None:
             new_audio_bytes = raw_audio
             audio_mime = getattr(voice_recording, "type", None) or "audio/wav"
 
-    # Trigger a turn if the student recorded NEW voice audio OR submitted text
     if new_audio_bytes is not None or typed_input:
         if not client:
             st.error("Please enter your Gemini API Key in the left sidebar first!")
             return
 
-        user_display = (
-            typed_input
-            if typed_input
-            else "🎙️ *[Sent a voice recording]*"
-        )
+        user_display = typed_input if typed_input else "🎙️ *[Sent a voice recording]*"
 
-        # 1. Append student's message to chat
         st.session_state.messages.append(
             {
                 "role": "user",
@@ -605,10 +570,9 @@ def main() -> None:
             }
         )
 
-        # 2. Get structured reply from Coach
         with st.spinner("Coach is thinking..."):
             try:
-                turn_result = ask_coach_george(
+                turn_result = ask_coach(
                     client=client,
                     user_text=typed_input,
                     audio_bytes=new_audio_bytes,
