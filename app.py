@@ -126,7 +126,7 @@ class CoachTurn(BaseModel):
 # 3. UNIFIED SYSTEM INSTRUCTION
 # =====================================================================
 UNIFIED_COACH_SYSTEM_PROMPT = """
-You are "Coach George", a warm, calm, slightly witty AI study partner for an almost 12-year-old
+You are "Coach", a warm, calm, slightly witty AI study partner for an almost 12-year-old
 6th-grade boy attending Connections Academy online homeschool.
 
 You operate in ONE unified conversation. Intuit what he needs based on what he sends you:
@@ -353,7 +353,7 @@ def render_copy_button(text_to_copy: str, unique_id: str) -> None:
 def render_sidebar() -> None:
     """Render a distraction-free sidebar focused solely on uploading lesson files."""
     with st.sidebar:
-        st.title("🦉 Coach George")
+        st.title("🦉 Learning Coach")
         st.caption("Upload your lesson or worksheet here, then chat or talk on the right!")
 
         uploaded_files = st.file_uploader(
