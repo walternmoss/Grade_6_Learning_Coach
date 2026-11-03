@@ -13,6 +13,7 @@ How It Works:
   4. Friendly clarification if a question prompt, worksheet, or rubric is missing.
 """
 
+import hashlib
 import io
 import os
 from typing import Dict, List, Optional
@@ -170,8 +171,8 @@ def init_session_state() -> None:
         "selected_model": "gemini-2.5-flash",
         # Uploaded files stored once per session: {filename: {"type_label": str, "part": types.Part}}
         "lesson_materials": {},
-        # Counter used to auto-reset the `st.audio_input` widget after each voice message
-        "audio_widget_counter": 0,
+        # Tracks the MD5 hash of the last processed voice recording so we don't unmount the widget
+        "last_audio_hash": None,
         # Unified chat history
         "messages": [
             {
@@ -385,7 +386,7 @@ def render_sidebar() -> None:
 
         if st.button("🧹 Start a Brand New Chat", use_container_width=True):
             st.session_state.messages = [st.session_state.messages[0]]
-            st.session_state.audio_widget_counter += 1
+            st.session_state.last_audio_hash = None
             st.rerun()
 
         # API Key fallback & Model selector tucked neatly at the bottom
@@ -412,6 +413,7 @@ def ask_coach_george(
     client: genai.Client,
     user_text: Optional[str] = None,
     audio_bytes: Optional[bytes] = None,
+    audio_mime_type: str = "audio/wav",
 ) -> CoachTurn:
     """
     Send active lesson files, conversation history, and the current voice/text input
@@ -461,7 +463,7 @@ def ask_coach_george(
     current_parts: List[types.Part] = []
     if audio_bytes:
         current_parts.append(
-            types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav")
+            types.Part.from_bytes(data=audio_bytes, mime_type=audio_mime_type)
         )
         current_parts.append(
             types.Part.from_text(
@@ -562,24 +564,33 @@ def main() -> None:
     st.divider()
 
     # --- Unified Bottom Input Bar (Voice + Text) ---
-    # Dynamic key automatically clears the audio widget after each voice submission
-    audio_key = f"voice_recorder_{st.session_state.audio_widget_counter}"
+    # Static key prevents Streamlit Cloud from unmounting the recorder mid-upload
     voice_recording = st.audio_input(
         "🎙️ Tap the microphone to talk out loud (ask a question or speak your answer):",
-        key=audio_key,
+        key="coach_voice_recorder",
     )
 
     typed_input = st.chat_input(
         "Or type/paste here (a question number, your rough draft, or a rubric)..."
     )
 
-    # Trigger a turn if the student recorded voice OR submitted text
-    if voice_recording is not None or typed_input:
+    # Check if a brand-new audio clip was recorded
+    new_audio_bytes: Optional[bytes] = None
+    audio_mime = "audio/wav"
+    if voice_recording is not None:
+        raw_audio = voice_recording.getvalue()
+        current_hash = hashlib.md5(raw_audio).hexdigest()
+        if current_hash != st.session_state.last_audio_hash:
+            st.session_state.last_audio_hash = current_hash
+            new_audio_bytes = raw_audio
+            audio_mime = getattr(voice_recording, "type", None) or "audio/wav"
+
+    # Trigger a turn if the student recorded NEW voice audio OR submitted text
+    if new_audio_bytes is not None or typed_input:
         if not client:
             st.error("Please enter your Gemini API Key in the left sidebar first!")
             return
 
-        audio_bytes = voice_recording.getvalue() if voice_recording is not None else None
         user_display = (
             typed_input
             if typed_input
@@ -594,13 +605,14 @@ def main() -> None:
             }
         )
 
-        # 2. Get structured reply from Coach George
+        # 2. Get structured reply from Coach
         with st.spinner("Coach is thinking..."):
             try:
                 turn_result = ask_coach_george(
                     client=client,
                     user_text=typed_input,
-                    audio_bytes=audio_bytes,
+                    audio_bytes=new_audio_bytes,
+                    audio_mime_type=audio_mime,
                 )
 
                 st.session_state.messages.append(
@@ -616,10 +628,6 @@ def main() -> None:
 
                 if turn_result.is_good_enough_to_submit:
                     st.balloons()
-
-                # Increment the audio widget key so the mic resets cleanly for the next turn
-                if audio_bytes is not None:
-                    st.session_state.audio_widget_counter += 1
 
                 st.rerun()
 
