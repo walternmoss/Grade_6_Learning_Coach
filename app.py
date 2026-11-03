@@ -505,7 +505,7 @@ def main() -> None:
     client = get_genai_client()
 
     # Header
-    st.markdown("## 🦉 Coach George")
+    st.markdown("## 🦉 Coach")
     if st.session_state.lesson_materials:
         names = ", ".join(st.session_state.lesson_materials.keys())
         st.caption(f"🟢 **Reading along with:** `{names}`")
