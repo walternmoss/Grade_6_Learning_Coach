@@ -487,7 +487,7 @@ def main() -> None:
     client = get_genai_client()
 
     # Header
-    st.markdown("## 🦉 Coach")
+    st.markdown("## 🦉 Owl- Your AI Learning Coach")
     if st.session_state.lesson_materials:
         names = ", ".join(st.session_state.lesson_materials.keys())
         st.caption(f"🟢 **Optional reference files attached:** `{names}`")
