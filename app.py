@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 # 1. PAGE CONFIGURATION & MINIMALIST STYLING
 # =====================================================================
 st.set_page_config(
-    page_title="Coach",
+    page_title="Owl - Your AI Learning Coach",
     page_icon="🦉",
     layout="centered",
     initial_sidebar_state="expanded",
