@@ -340,7 +340,7 @@ def render_copy_button(text_to_copy: str, unique_id: str) -> None:
 def render_sidebar() -> None:
     """Render sidebar for optional file uploads and settings."""
     with st.sidebar:
-        st.title("🦉 Learning Coach")
+        st.title("🦉 Owl - Your AI Learning Coach")
         st.caption("Chat freely, or drop a worksheet here if you want help with homework!")
 
         uploaded_files = st.file_uploader(
