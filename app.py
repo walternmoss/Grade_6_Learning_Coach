@@ -201,11 +201,11 @@ def resolve_api_key() -> str:
 
 def get_genai_client() -> Optional[genai.Client]:
     """Return an initialized `google.genai.Client` or None if no key is set."""
-    api_key = resolve_api_key()
+    api_key = get_api_key()
     if not api_key:
         return None
     try:
-        return genai.Client(api_key=api_key)
+        return genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
     except Exception as exc:
         st.sidebar.error(f"Failed to initialize Gemini client: {exc}")
         return None
