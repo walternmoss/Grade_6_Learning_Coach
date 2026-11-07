@@ -1,3 +1,8 @@
+The `NameError` occurred because the code defined the function as `resolve_api_key()`, but the client tried to call `get_api_key()`.
+
+Here is the fully corrected code with the function call matched up so you can copy and paste the entire file over:
+
+```python
 """
 Coach: Unified AI Learning Coach for 6th Grade Online Homeschool
 =======================================================================
@@ -201,7 +206,7 @@ def resolve_api_key() -> str:
 
 def get_genai_client() -> Optional[genai.Client]:
     """Return an initialized `google.genai.Client` or None if no key is set."""
-    api_key = get_api_key()
+    api_key = resolve_api_key()  # FIXED: Changed from get_api_key() to match function name
     if not api_key:
         return None
     try:
@@ -603,3 +608,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+```
