@@ -1,8 +1,3 @@
-The `NameError` occurred because the code defined the function as `resolve_api_key()`, but the client tried to call `get_api_key()`.
-
-Here is the fully corrected code with the function call matched up so you can copy and paste the entire file over:
-
-```python
 """
 Coach: Unified AI Learning Coach for 6th Grade Online Homeschool
 =======================================================================
@@ -608,5 +603,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-```
